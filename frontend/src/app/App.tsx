@@ -1,15 +1,18 @@
 import React, { useState } from "react";
 import { motion } from "motion/react";
-import { Search, ArrowRight } from "lucide-react";
+import { Search, ArrowRight, Building2 } from "lucide-react";
 import { BrowserRouter, Routes, Route, useNavigate } from "react-router-dom";
-import ChatbotPage from "./pages/ChatbotPage";
+import InterviewPage from "./pages/InterviewPage";
+import ReportPage from "./pages/ReportPage";
 
 export default function App() {
   return (
     <BrowserRouter>
       <Routes>
         <Route path="/" element={<MainPage />} />
-        <Route path="/chat" element={<ChatbotPage />} />
+        <Route path="/interview/new" element={<InterviewPage />} />
+        <Route path="/interview/:sessionId" element={<InterviewPage />} />
+        <Route path="/report/:sessionId" element={<ReportPage />} />
       </Routes>
     </BrowserRouter>
   );
@@ -18,34 +21,37 @@ export default function App() {
 const MainPage = () => {
   const navigate = useNavigate();
   const [job, setJob] = useState("");
+  const [company, setCompany] = useState("");
   const [isFocused, setIsFocused] = useState(false);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (job) {
-      navigate(`/chat?position=${encodeURIComponent(job)}`);
+      const params = new URLSearchParams({ position: job });
+      if (company) params.set("company", company);
+      navigate(`/interview/new?${params.toString()}`);
     }
   };
 
   return (
     <div className="relative min-h-screen overflow-hidden font-sans flex flex-col selection:bg-[#4facfe] selection:text-white bg-[#82C8FF]">
-      {/* 
-        Light Windows Vista Aurora Background 
+      {/*
+        Light Windows Vista Aurora Background
         Crisp, airy blue base with vibrant cyan, soft green, and bright white sweeping lights.
       */}
       <div className="absolute inset-0 pointer-events-none overflow-hidden">
         {/* Slightly darker airy background gradient for better contrast */}
         <div className="absolute inset-0 bg-gradient-to-br from-[#3BAFDA] via-[#5CB3FF] to-[#A3D9FF]" />
-        
+
         {/* Swooping Aurora Streaks */}
-        <motion.div 
+        <motion.div
           animate={{
             transform: ["translate(-5%, -5%) rotate(-10deg)", "translate(2%, 2%) rotate(-8deg)", "translate(-5%, -5%) rotate(-10deg)"]
           }}
           transition={{ duration: 15, repeat: Infinity, ease: "easeInOut" }}
           className="absolute top-[-10%] left-[-10%] w-[120%] h-[50%] bg-[#00A3FF] blur-[120px] opacity-30 rounded-[100%]"
         />
-        <motion.div 
+        <motion.div
           animate={{
             transform: ["translate(5%, 5%) rotate(15deg)", "translate(-2%, -2%) rotate(12deg)", "translate(5%, 5%) rotate(15deg)"]
           }}
@@ -72,7 +78,7 @@ const MainPage = () => {
 
       {/* Main Content */}
       <main className="relative z-10 flex-1 flex flex-col items-center justify-center p-6 text-center -mt-16">
-        <motion.div 
+        <motion.div
           initial={{ opacity: 0, y: 15 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.8, ease: "easeOut" }}
@@ -87,22 +93,22 @@ const MainPage = () => {
           </h1>
 
           {/* Light Aero Glass Form Container */}
-          <form onSubmit={handleSubmit} className="w-full max-w-2xl mx-auto">
-            {/* 
-              Crisp Light Aero Glass Panel 
+          <form onSubmit={handleSubmit} className="w-full max-w-2xl mx-auto space-y-4">
+            {/*
+              Crisp Light Aero Glass Panel
               - backdrop blur
               - highly transparent white
               - bright top/left borders for 3D lighting edge
             */}
-            <div 
+            <div
               className={`relative p-2 rounded-[2rem] transition-all duration-500 backdrop-blur-2xl bg-white/30 border border-white/60 shadow-[0_16px_40px_rgba(0,0,0,0.08),_inset_0_2px_4px_rgba(255,255,255,0.8)]
                 ${isFocused ? 'ring-4 ring-white/50 shadow-[0_0_40px_rgba(255,255,255,0.6)]' : ''}
               `}
             >
               <div className="relative flex items-center w-full bg-white/40 rounded-[1.5rem] border border-white/50 shadow-[inset_0_2px_8px_rgba(0,0,0,0.05)] overflow-hidden">
-                
+
                 <Search className="absolute left-6 w-5 h-5 text-white drop-shadow-md" />
-                
+
                 <input
                   type="text"
                   placeholder="e.g., Senior Software Engineer"
@@ -112,10 +118,10 @@ const MainPage = () => {
                   onBlur={() => setIsFocused(false)}
                   className="w-full pl-14 pr-36 py-4 sm:py-5 bg-transparent text-xl font-medium text-white placeholder-white/80 focus:outline-none [text-shadow:0_1px_3px_rgba(0,0,0,0.2)]"
                 />
-                
+
                 {/* Modernized Glossy Button */}
                 <div className="absolute right-2 top-2 bottom-2">
-                  <button 
+                  <button
                     type="submit"
                     className="relative w-full h-full px-6 sm:px-8 rounded-[1.2rem] overflow-hidden bg-gradient-to-b from-[#4facfe] to-[#00f2fe] border border-white/50 shadow-[0_4px_12px_rgba(0,163,255,0.3),_inset_0_2px_4px_rgba(255,255,255,0.6)] active:scale-[0.97] transition-all hover:shadow-[0_6px_16px_rgba(0,163,255,0.4),_inset_0_2px_4px_rgba(255,255,255,0.8)] hover:brightness-105 group flex items-center justify-center gap-2"
                   >
@@ -128,6 +134,20 @@ const MainPage = () => {
                     </span>
                   </button>
                 </div>
+              </div>
+            </div>
+
+            {/* Company field */}
+            <div className="relative p-2 rounded-[2rem] backdrop-blur-2xl bg-white/20 border border-white/40 shadow-[0_8px_24px_rgba(0,0,0,0.05)]">
+              <div className="relative flex items-center w-full bg-white/30 rounded-[1.5rem] border border-white/40 overflow-hidden">
+                <Building2 className="absolute left-6 w-5 h-5 text-white/80 drop-shadow-md" />
+                <input
+                  type="text"
+                  placeholder="Company name (optional)"
+                  value={company}
+                  onChange={(e) => setCompany(e.target.value)}
+                  className="w-full pl-14 pr-6 py-3 sm:py-4 bg-transparent text-lg font-medium text-white placeholder-white/60 focus:outline-none [text-shadow:0_1px_3px_rgba(0,0,0,0.2)]"
+                />
               </div>
             </div>
           </form>
