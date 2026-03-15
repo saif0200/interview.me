@@ -18,23 +18,57 @@ interview.me/
 
 ### Prerequisites
 - Node.js 20+
-- PostgreSQL 16
+- PostgreSQL (any recent version — 16, 17, or 18)
 - [DigitalOcean Model Access Key](https://cloud.digitalocean.com/gen-ai/inference)
 
-### Setup
+### 1. Install PostgreSQL
+
+**macOS (Homebrew):**
+```bash
+brew install postgresql
+brew services start postgresql
+```
+
+**Ubuntu/Debian:**
+```bash
+sudo apt install postgresql
+sudo systemctl start postgresql
+```
+
+### 2. Create the database
+
+```bash
+createdb interviewme
+```
+
+### 3. Install dependencies
 
 ```bash
 npm install
+```
 
-# Configure backend environment
+### 4. Configure environment
+
+```bash
 cp backend/.env.example backend/.env
-# Edit backend/.env with your DATABASE_URL and DO_MODEL_ACCESS_KEY
+```
 
-# Run both frontend and backend
+Edit `backend/.env`:
+```
+DATABASE_URL=postgresql://your-username@localhost:5432/interviewme
+DO_MODEL_ACCESS_KEY=your-key-from-digitalocean
+PORT=3001
+```
+
+> To get a Model Access Key, go to [DigitalOcean GenAI Inference](https://cloud.digitalocean.com/gen-ai/inference) and create a key.
+
+### 5. Run
+
+```bash
 npm run dev
 ```
 
-Frontend runs on `http://localhost:5173`, backend on `http://localhost:3001`. The Vite dev server proxies `/api` requests to the backend automatically.
+Frontend runs on `http://localhost:5173`, backend on `http://localhost:3001`. The Vite dev server proxies `/api` requests to the backend automatically. Database tables are created automatically on first startup.
 
 ## Scripts
 
