@@ -170,17 +170,89 @@ async function saveTranscriptLog(sessionId: string, session: Session) {
   const title = session.job_title || "unknown";
   const filename = `${date}_${company}_${title}`.replace(/[^a-zA-Z0-9_-]/g, "_");
 
+  const scraped = session.scraped_context as import("../types/index.js").ScrapedContext | null;
+  const searched = session.search_context as import("../types/index.js").SearchContext | null;
+
   const lines: string[] = [
     `INTERVIEW TRANSCRIPT`,
     `${"=".repeat(60)}`,
     `Session:  ${sessionId}`,
     `Role:     ${title}`,
     `Company:  ${company}`,
-    `Date:     ${new Date().toISOString()}`,
+    `Job URL:  ${session.job_url || "—"}`,
+    `Started:  ${session.created_at}`,
+    `Ended:    ${session.ended_at || "—"}`,
     `Messages: ${messagesResult.rows.length}`,
     `${"=".repeat(60)}`,
     ``,
   ];
+
+  // User-provided context
+  if (session.user_context) {
+    lines.push(`[USER CONTEXT]`);
+    lines.push(`${"-".repeat(40)}`);
+    lines.push(session.user_context);
+    lines.push(`${"-".repeat(40)}`);
+    lines.push(``);
+  }
+
+  // Scraped job data
+  if (scraped) {
+    lines.push(`[SCRAPED JOB DATA]`);
+    lines.push(`${"-".repeat(40)}`);
+    if (scraped.source_url) lines.push(`Source: ${scraped.source_url}`);
+    if (scraped.job_title) lines.push(`Title: ${scraped.job_title}`);
+    if (scraped.company) lines.push(`Company: ${scraped.company}`);
+    if (scraped.requirements?.length) {
+      lines.push(``);
+      lines.push(`Requirements:`);
+      for (const r of scraped.requirements) lines.push(`  - ${r}`);
+    }
+    if (scraped.responsibilities?.length) {
+      lines.push(``);
+      lines.push(`Responsibilities:`);
+      for (const r of scraped.responsibilities) lines.push(`  - ${r}`);
+    }
+    if (scraped.tech_stack?.length) {
+      lines.push(``);
+      lines.push(`Tech Stack: ${scraped.tech_stack.join(", ")}`);
+    }
+    if (scraped.raw_markdown) {
+      lines.push(``);
+      lines.push(`Raw Page Content:`);
+      lines.push(scraped.raw_markdown);
+    }
+    lines.push(`${"-".repeat(40)}`);
+    lines.push(``);
+  }
+
+  // Search context
+  if (searched) {
+    lines.push(`[SEARCH CONTEXT]`);
+    lines.push(`${"-".repeat(40)}`);
+    if (searched.company_info?.length) {
+      lines.push(`Company Info:`);
+      for (const c of searched.company_info) {
+        lines.push(`  - ${c.content}`);
+        lines.push(`    (${c.url})`);
+      }
+      lines.push(``);
+    }
+    if (searched.interview_questions?.length) {
+      lines.push(`Interview Questions Found:`);
+      for (const q of searched.interview_questions) {
+        lines.push(`  - ${q.content}`);
+        lines.push(`    Source: ${q.source} (${q.url})`);
+      }
+    }
+    lines.push(`${"-".repeat(40)}`);
+    lines.push(``);
+  }
+
+  // Messages
+  lines.push(`[CONVERSATION]`);
+  lines.push(`${"=".repeat(60)}`);
+  lines.push(``);
 
   for (const msg of messagesResult.rows) {
     const label =

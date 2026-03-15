@@ -83,17 +83,54 @@ Do NOT:
 - Break character as an interviewer${enrichmentSection}`;
 }
 
+function buildReportContext(enrichment?: EnrichmentData): string {
+  if (!enrichment) return "";
+
+  const sections: string[] = [];
+  const { scraped, searched, userContext } = enrichment;
+
+  if (searched?.company_info?.length) {
+    sections.push(`COMPANY BACKGROUND: ${searched.company_info.map((c) => c.content).join(" ")}`);
+  }
+
+  if (scraped?.responsibilities?.length) {
+    sections.push(`RESPONSIBILITIES:\n${scraped.responsibilities.map((r) => `- ${r}`).join("\n")}`);
+  }
+
+  if (scraped?.requirements?.length) {
+    sections.push(`REQUIREMENTS:\n${scraped.requirements.map((r) => `- ${r}`).join("\n")}`);
+  }
+
+  if (scraped?.tech_stack?.length) {
+    sections.push(`TECH STACK: ${scraped.tech_stack.join(", ")}`);
+  }
+
+  if (searched?.interview_questions?.length) {
+    const questions = searched.interview_questions
+      .slice(0, 3)
+      .map((q) => `- ${q.content}`)
+      .join("\n");
+    sections.push(`REPORTED INTERVIEW QUESTIONS:\n${questions}`);
+  }
+
+  if (userContext) {
+    sections.push(`CANDIDATE'S NOTES: ${userContext}`);
+  }
+
+  if (sections.length === 0) return "";
+
+  return "\n\n---\nROLE CONTEXT (evaluate the candidate against these specifics):\n\n" + sections.join("\n\n");
+}
+
 export function reportGenerationPrompt(
   jobTitle: string,
   company?: string | null,
   enrichment?: EnrichmentData,
 ): string {
   const companyLine = company ? ` at ${company}` : "";
-  const requirementsNote = enrichment?.scraped?.requirements?.length
-    ? `\n\nThe role specifically requires: ${enrichment.scraped.requirements.join("; ")}. Evaluate the candidate against these requirements.`
-    : "";
+  const contextSection = buildReportContext(enrichment);
 
-  return `You are an expert interview evaluator. Based on the following mock interview transcript for a ${jobTitle} position${companyLine}, generate a detailed performance report.${requirementsNote}
+  return `You are an expert interview evaluator. Based on the following mock interview transcript for a ${jobTitle} position${companyLine}, generate a detailed performance report.${contextSection}
 
 Your report must include:
 
