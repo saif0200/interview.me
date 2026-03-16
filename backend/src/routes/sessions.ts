@@ -3,7 +3,7 @@ import { writeFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { pool } from "../config/database.js";
 import { chatCompletion } from "../services/llm.js";
-import { interviewerSystemPrompt } from "../services/prompts.js";
+import { generateInterviewerPrompt } from "../services/prompts.js";
 import { enrichSession } from "../services/enrichment.js";
 import type { CreateSessionBody, Session, Message } from "../types/index.js";
 
@@ -58,13 +58,14 @@ router.post("/", async (req, res, next) => {
     const session = sessionResult.rows[0];
     console.log(`[SESSION] Created: id=${session.id}`);
 
-    // Build system prompt with enrichment
-    const systemContent = interviewerSystemPrompt(finalTitle, finalCompany, {
+    // Build system prompt with enrichment (LLM-generated)
+    const promptStart = Date.now();
+    const systemContent = await generateInterviewerPrompt(finalTitle, finalCompany, {
       scraped: enrichment?.scraped,
       searched: enrichment?.searched,
       userContext: user_context,
     });
-    console.log(`[PROMPT] System prompt: ${systemContent.length} chars`);
+    console.log(`[PROMPT] System prompt generated in ${Date.now() - promptStart}ms (${systemContent.length} chars)`);
 
     // Store system prompt as first message
     await pool.query(
@@ -203,6 +204,9 @@ async function saveTranscriptLog(sessionId: string, session: Session) {
     if (scraped.source_url) lines.push(`Source: ${scraped.source_url}`);
     if (scraped.job_title) lines.push(`Title: ${scraped.job_title}`);
     if (scraped.company) lines.push(`Company: ${scraped.company}`);
+    if (scraped.seniority_level) lines.push(`Seniority: ${scraped.seniority_level}`);
+    if (scraped.company_description) lines.push(`About Company: ${scraped.company_description}`);
+    if (scraped.team_description) lines.push(`About Team: ${scraped.team_description}`);
     if (scraped.requirements?.length) {
       lines.push(``);
       lines.push(`Requirements:`);

@@ -1,4 +1,8 @@
-import "dotenv/config";
+import { config } from "dotenv";
+import { resolve } from "path";
+
+// Load .env from repo root (works for both `npm run dev -w backend` and direct runs)
+config({ path: resolve(import.meta.dirname, "../../../.env") });
 
 function required(key: string): string {
   const value = process.env[key];

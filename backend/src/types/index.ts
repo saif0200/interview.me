@@ -1,9 +1,12 @@
 export interface ScrapedContext {
   job_title?: string;
   company?: string;
+  company_description?: string;
+  team_description?: string;
   requirements?: string[];
   responsibilities?: string[];
   tech_stack?: string[];
+  seniority_level?: string;
   raw_markdown?: string;
   source_url?: string;
 }

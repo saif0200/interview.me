@@ -1,4 +1,4 @@
-import { fetchJobPage, extractJobData } from "./scraper.js";
+import { fetchJobPage, extractJobData, companyFromUrl } from "./scraper.js";
 import { searchInterviewContext } from "./search.js";
 import type { ScrapedContext, SearchContext } from "../types/index.js";
 
@@ -32,8 +32,11 @@ export async function enrichSession(params: {
 
   // Phase 1: Fast fetch — get page title + markdown from Jina (no LLM)
   const page = params.jobUrl
-    ? await withTimeout(fetchJobPage(params.jobUrl), "Jina fetch", 10000)
+    ? await withTimeout(fetchJobPage(params.jobUrl), "Jina fetch", 15000)
     : null;
+
+  // Extract company from URL domain as a reliable fallback
+  const urlCompany = params.jobUrl ? companyFromUrl(params.jobUrl) : null;
 
   // Parse company and title from the page title (e.g. "Zoox - Senior Software Engineer")
   let quickTitle = params.jobTitle;
@@ -47,11 +50,13 @@ export async function enrichSession(params: {
       quickTitle = quickTitle || page.title.trim();
     }
   }
+  // Fall back to URL-derived company name
+  quickCompany = quickCompany || urlCompany || undefined;
 
   // Phase 2: Run LLM extraction + search in parallel
   const [extractedResult, searchResult] = await Promise.all([
     page
-      ? withTimeout(extractJobData(page.markdown, params.jobUrl!), "LLM extraction", 30000)
+      ? withTimeout(extractJobData(page, params.jobUrl!), "LLM extraction", 30000)
       : Promise.resolve(null),
     quickTitle || quickCompany
       ? withTimeout(
@@ -64,7 +69,7 @@ export async function enrichSession(params: {
   scraped = extractedResult || {};
   searched = searchResult || {};
 
-  // Prefer LLM-extracted data > page title > user input
+  // Prefer LLM-extracted data > page title > URL-derived > user input
   const job_title = scraped.job_title || quickTitle;
   const company = scraped.company || quickCompany;
 
