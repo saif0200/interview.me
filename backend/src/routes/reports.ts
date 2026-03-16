@@ -2,7 +2,7 @@ import { Router } from "express";
 import { pool } from "../config/database.js";
 import { generateReportStream } from "../services/llm.js";
 import { reportGenerationPrompt } from "../services/prompts.js";
-import type { Report, Session, Message } from "../types/index.js";
+import type { Report, Session, Message, EnrichmentContext } from "../types/index.js";
 
 const router = Router();
 
@@ -114,7 +114,14 @@ router.get("/:id/report/stream", async (req, res, next) => {
       .map((m) => `${m.role === "assistant" ? "Interviewer" : "Candidate"}: ${m.content}`)
       .join("\n\n");
 
-    const systemPrompt = reportGenerationPrompt(session.job_title, session.company);
+    // Fix: pass enrichment context to report generation
+    const enrichment = session.enrichment_context as EnrichmentContext | null;
+    const systemPrompt = reportGenerationPrompt(
+      session.job_title,
+      session.company,
+      enrichment,
+      session.user_context,
+    );
 
     // Set up SSE
     res.writeHead(200, {
@@ -124,11 +131,17 @@ router.get("/:id/report/stream", async (req, res, next) => {
     });
 
     const llmStart = Date.now();
+    let timedOut = false;
     const timeout = setTimeout(() => {
+      timedOut = true;
       console.error(`[REPORT] session=${id.slice(0, 8)}… timed out after 60s`);
       res.write(`data: ${JSON.stringify({ error: "Report generation timed out" })}\n\n`);
       res.end();
     }, 60_000);
+
+    // Abort generation if client disconnects
+    const abortController = new AbortController();
+    res.on("close", () => abortController.abort());
 
     const stream = await generateReportStream([
       { role: "system", content: systemPrompt },
@@ -138,6 +151,7 @@ router.get("/:id/report/stream", async (req, res, next) => {
     let fullContent = "";
 
     for await (const chunk of stream) {
+      if (timedOut || abortController.signal.aborted) break;
       const token = chunk.choices[0]?.delta?.content || "";
       if (token) {
         fullContent += token;
@@ -146,6 +160,7 @@ router.get("/:id/report/stream", async (req, res, next) => {
     }
 
     clearTimeout(timeout);
+    if (timedOut || abortController.signal.aborted) return;
 
     console.log(`[REPORT] session=${id.slice(0, 8)}… generated in ${Date.now() - llmStart}ms (${fullContent.length} chars)`);
 
@@ -181,7 +196,7 @@ router.get("/:id/report/stream", async (req, res, next) => {
     if (!res.headersSent) {
       next(err);
     } else {
-      console.error("Report SSE stream error:", err);
+      console.error(`[REPORT] SSE stream error for session=${req.params.id?.slice(0, 8)}…:`, err);
       res.end();
     }
   }

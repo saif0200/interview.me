@@ -2,17 +2,27 @@ import { Router } from "express";
 import { writeFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { pool } from "../config/database.js";
+import { buildInterviewerRequestMessages } from "../services/interviewRuntime.js";
 import { chatCompletion } from "../services/llm.js";
+import { appendPayloadTrace } from "../services/debug.js";
 import { generateInterviewerPrompt } from "../services/prompts.js";
 import { enrichSession } from "../services/enrichment.js";
-import type { CreateSessionBody, Session, Message } from "../types/index.js";
+import type { CreateSessionBody, Session, Message, EnrichmentContext } from "../types/index.js";
 
 const router = Router();
+
+function isUsableOpening(content: string): boolean {
+  const trimmed = content.trim();
+  if (trimmed.length < 20) return false;
+  if (!trimmed.includes("?")) return false;
+  if (trimmed.endsWith("—") || trimmed.endsWith("-") || trimmed.endsWith(":")) return false;
+  return true;
+}
 
 // POST /api/sessions — Create a new interview session
 router.post("/", async (req, res, next) => {
   try {
-    const { job_title, company, job_description, job_url, user_context } =
+    const { job_title, company, job_url, user_context } =
       req.body as CreateSessionBody;
 
     console.log(`\n${"=".repeat(60)}`);
@@ -28,12 +38,11 @@ router.post("/", async (req, res, next) => {
     const enrichStart = Date.now();
     const enrichment =
       job_url || company
-        ? await enrichSession({ jobUrl: job_url, jobTitle: job_title, company })
+        ? await enrichSession({ jobUrl: job_url, jobTitle: job_title, company, userContext: user_context })
         : null;
     console.log(`[ENRICHMENT] Completed in ${Date.now() - enrichStart}ms`);
     if (enrichment) {
-      console.log(`  Scraped: title="${enrichment.scraped?.job_title || "—"}" company="${enrichment.scraped?.company || "—"}" requirements=${enrichment.scraped?.requirements?.length || 0} tech_stack=${enrichment.scraped?.tech_stack?.length || 0}`);
-      console.log(`  Search: questions=${enrichment.searched?.interview_questions?.length || 0} company_info=${enrichment.searched?.company_info?.length || 0}`);
+      console.log(`  Context: title="${enrichment.context?.job_title || "—"}" company="${enrichment.context?.company || "—"}" requirements=${enrichment.context?.requirements?.length || 0} tech_stack=${enrichment.context?.tech_stack?.length || 0}`);
     }
 
     // Use enriched values, falling back to user input
@@ -41,31 +50,43 @@ router.post("/", async (req, res, next) => {
     const finalCompany = enrichment?.company || company || null;
     console.log(`[SESSION] Resolved: "${finalTitle}" at "${finalCompany || "—"}"`);
 
-    // Create session
+    // Generate system prompt before creating session (so we don't orphan DB rows on failure)
+    const promptStart = Date.now();
+    const systemContent = await generateInterviewerPrompt(
+      finalTitle,
+      finalCompany,
+      enrichment?.context,
+      user_context,
+    );
+    console.log(`[PROMPT] System prompt generated in ${Date.now() - promptStart}ms (${systemContent.length} chars)`);
+
+    // Create session (interview_brief will be populated by deep enrichment background task)
     const sessionResult = await pool.query<Session>(
-      `INSERT INTO sessions (job_title, company, job_description, job_url, scraped_context, search_context, user_context)
-       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
+      `INSERT INTO sessions (job_title, company, job_url, enrichment_context, user_context)
+       VALUES ($1, $2, $3, $4, $5) RETURNING *`,
       [
         finalTitle,
         finalCompany,
-        job_description || null,
         job_url || null,
-        enrichment?.scraped ? JSON.stringify(enrichment.scraped) : null,
-        enrichment?.searched ? JSON.stringify(enrichment.searched) : null,
+        enrichment?.context ? JSON.stringify(enrichment.context) : null,
         user_context || null,
       ],
     );
     const session = sessionResult.rows[0];
     console.log(`[SESSION] Created: id=${session.id}`);
 
-    // Build system prompt with enrichment (LLM-generated)
-    const promptStart = Date.now();
-    const systemContent = await generateInterviewerPrompt(finalTitle, finalCompany, {
-      scraped: enrichment?.scraped,
-      searched: enrichment?.searched,
-      userContext: user_context,
+    // Fire off deep enrichment in the background (scrapes search result pages, generates brief)
+    if (enrichment) {
+      enrichment.startDeepEnrichment(session.id);
+    }
+
+    await appendPayloadTrace(session.id, "session_setup", {
+      job_title: finalTitle,
+      company: finalCompany,
+      enrichment_context: enrichment?.context ?? null,
+      user_context: user_context ?? null,
+      generated_system_prompt: systemContent,
     });
-    console.log(`[PROMPT] System prompt generated in ${Date.now() - promptStart}ms (${systemContent.length} chars)`);
 
     // Store system prompt as first message
     await pool.query(
@@ -73,19 +94,44 @@ router.post("/", async (req, res, next) => {
       [session.id, systemContent],
     );
 
-    // Generate first interviewer message
+    // Generate first interviewer message (retry once if empty)
     const llmStart = Date.now();
-    const stream = await chatCompletion([
-      { role: "system", content: systemContent },
-    ]);
-
     let fullContent = "";
-    for await (const chunk of stream) {
-      const token = chunk.choices[0]?.delta?.content || "";
-      fullContent += token;
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      fullContent = "";
+      const openingMessages = [
+        { role: "system" as const, content: systemContent },
+        { role: "user" as const, content: "[The candidate just joined the call. Greet them and ask your first question. Keep it to 1-2 sentences total, under 30 words.]" },
+      ];
+      await appendPayloadTrace(session.id, "opening_generation_request", {
+        attempt,
+        messages: openingMessages,
+      });
+      const stream = await chatCompletion(openingMessages, 150);
+
+      for await (const chunk of stream) {
+        const token = chunk.choices[0]?.delta?.content || "";
+        fullContent += token;
+      }
+      fullContent = fullContent.replace(/\[\[?\s*END[\s_]?INTERVIEW\s*\]?\]/gi, "").trim();
+
+      if (isUsableOpening(fullContent)) {
+        console.log(`[LLM] Opening message generated (attempt ${attempt}) in ${Date.now() - llmStart}ms (${fullContent.length} chars)`);
+        console.log(`  "${fullContent.slice(0, 120)}..."`);
+        await appendPayloadTrace(session.id, "opening_generation_response", {
+          attempt,
+          content: fullContent,
+        });
+        break;
+      }
+      console.warn(`[LLM] Opening message attempt ${attempt} returned unusable content, retrying...`);
     }
-    console.log(`[LLM] Opening message generated in ${Date.now() - llmStart}ms (${fullContent.length} chars)`);
-    console.log(`  "${fullContent.slice(0, 120)}..."`);
+
+    if (!isUsableOpening(fullContent)) {
+      // Absolute fallback — concise and complete, even if the model opening is malformed.
+      fullContent = `Hi, thanks for joining. I'm hiring for the ${finalTitle} role${finalCompany ? ` here at ${finalCompany}` : ""}—what made you interested in this team?`;
+      console.warn(`[LLM] Using fallback opening message`);
+    }
 
     // Store assistant message
     const msgResult = await pool.query<Message>(
@@ -133,6 +179,22 @@ router.get("/:id", async (req, res, next) => {
   }
 });
 
+// DELETE /api/sessions/:id/messages/last — Remove the last user message (for reconnect after refresh)
+router.delete("/:id/messages/last", async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const result = await pool.query(
+      `DELETE FROM messages WHERE id = (
+        SELECT id FROM messages WHERE session_id = $1 AND role = 'user' ORDER BY created_at DESC LIMIT 1
+      ) RETURNING id`,
+      [id],
+    );
+    res.json({ deleted: result.rowCount === 1 });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // POST /api/sessions/:id/end — End session and trigger report generation
 router.post("/:id/end", async (req, res, next) => {
   try {
@@ -169,10 +231,10 @@ async function saveTranscriptLog(sessionId: string, session: Session) {
   const date = new Date().toISOString().slice(0, 10);
   const company = session.company || "unknown";
   const title = session.job_title || "unknown";
-  const filename = `${date}_${company}_${title}`.replace(/[^a-zA-Z0-9_-]/g, "_");
+  const shortId = sessionId.slice(0, 8);
+  const filename = `${date}_${company}_${title}_${shortId}`.replace(/[^a-zA-Z0-9_-]/g, "_");
 
-  const scraped = session.scraped_context as import("../types/index.js").ScrapedContext | null;
-  const searched = session.search_context as import("../types/index.js").SearchContext | null;
+  const enrichment = session.enrichment_context as EnrichmentContext | null;
 
   const lines: string[] = [
     `INTERVIEW TRANSCRIPT`,
@@ -197,56 +259,51 @@ async function saveTranscriptLog(sessionId: string, session: Session) {
     lines.push(``);
   }
 
-  // Scraped job data
-  if (scraped) {
-    lines.push(`[SCRAPED JOB DATA]`);
+  if (session.interview_brief) {
+    lines.push(`[INTERVIEW BRIEF]`);
     lines.push(`${"-".repeat(40)}`);
-    if (scraped.source_url) lines.push(`Source: ${scraped.source_url}`);
-    if (scraped.job_title) lines.push(`Title: ${scraped.job_title}`);
-    if (scraped.company) lines.push(`Company: ${scraped.company}`);
-    if (scraped.seniority_level) lines.push(`Seniority: ${scraped.seniority_level}`);
-    if (scraped.company_description) lines.push(`About Company: ${scraped.company_description}`);
-    if (scraped.team_description) lines.push(`About Team: ${scraped.team_description}`);
-    if (scraped.requirements?.length) {
-      lines.push(``);
-      lines.push(`Requirements:`);
-      for (const r of scraped.requirements) lines.push(`  - ${r}`);
-    }
-    if (scraped.responsibilities?.length) {
-      lines.push(``);
-      lines.push(`Responsibilities:`);
-      for (const r of scraped.responsibilities) lines.push(`  - ${r}`);
-    }
-    if (scraped.tech_stack?.length) {
-      lines.push(``);
-      lines.push(`Tech Stack: ${scraped.tech_stack.join(", ")}`);
-    }
-    if (scraped.raw_markdown) {
-      lines.push(``);
-      lines.push(`Raw Page Content:`);
-      lines.push(scraped.raw_markdown);
-    }
+    lines.push(session.interview_brief);
     lines.push(`${"-".repeat(40)}`);
     lines.push(``);
   }
 
-  // Search context
-  if (searched) {
-    lines.push(`[SEARCH CONTEXT]`);
+  // Enrichment context
+  if (enrichment) {
+    lines.push(`[ENRICHMENT CONTEXT]`);
     lines.push(`${"-".repeat(40)}`);
-    if (searched.company_info?.length) {
-      lines.push(`Company Info:`);
-      for (const c of searched.company_info) {
-        lines.push(`  - ${c.content}`);
-        lines.push(`    (${c.url})`);
-      }
+    if (enrichment.job_title) lines.push(`Title: ${enrichment.job_title}`);
+    if (enrichment.company) lines.push(`Company: ${enrichment.company}`);
+    if (enrichment.seniority_level) lines.push(`Seniority: ${enrichment.seniority_level}`);
+    if (enrichment.company_description) lines.push(`About Company: ${enrichment.company_description}`);
+    if (enrichment.team_description) lines.push(`About Team: ${enrichment.team_description}`);
+    if (enrichment.requirements?.length) {
       lines.push(``);
+      lines.push(`Requirements:`);
+      for (const r of enrichment.requirements) lines.push(`  - ${r}`);
     }
-    if (searched.interview_questions?.length) {
-      lines.push(`Interview Questions Found:`);
-      for (const q of searched.interview_questions) {
-        lines.push(`  - ${q.content}`);
-        lines.push(`    Source: ${q.source} (${q.url})`);
+    if (enrichment.responsibilities?.length) {
+      lines.push(``);
+      lines.push(`Responsibilities:`);
+      for (const r of enrichment.responsibilities) lines.push(`  - ${r}`);
+    }
+    if (enrichment.tech_stack?.length) {
+      lines.push(``);
+      lines.push(`Tech Stack: ${enrichment.tech_stack.join(", ")}`);
+    }
+    if (enrichment.interview_intel) {
+      const intel = enrichment.interview_intel;
+      if (intel.questions.length > 0) {
+        lines.push(``);
+        lines.push(`Interview Questions:`);
+        for (const q of intel.questions) lines.push(`  - ${q}`);
+      }
+      if (intel.process_details) {
+        lines.push(``);
+        lines.push(`Process Details: ${intel.process_details}`);
+      }
+      if (intel.culture_notes) {
+        lines.push(``);
+        lines.push(`Culture Notes: ${intel.culture_notes}`);
       }
     }
     lines.push(`${"-".repeat(40)}`);
@@ -275,6 +332,44 @@ async function saveTranscriptLog(sessionId: string, session: Session) {
       lines.push(msg.content);
     }
     lines.push(``);
+  }
+
+  const systemPrompt = messagesResult.rows.find((msg) => msg.role === "system")?.content;
+  if (systemPrompt) {
+    lines.push(`[INTERVIEWER REQUEST PAYLOADS]`);
+    lines.push(`${"=".repeat(60)}`);
+    lines.push(``);
+
+    const openingMessages = [{ role: "system", content: systemPrompt }];
+    lines.push(`[OPENING REQUEST]`);
+    lines.push(`${"-".repeat(40)}`);
+    lines.push(JSON.stringify(openingMessages, null, 2));
+    lines.push(`${"-".repeat(40)}`);
+    lines.push(``);
+
+    for (let i = 0; i < messagesResult.rows.length; i++) {
+      const msg = messagesResult.rows[i];
+      if (msg.role !== "user") continue;
+
+      const priorMessages = messagesResult.rows
+        .slice(0, i + 1)
+        .map((m) => ({
+          role: m.role,
+          content: m.content,
+        }));
+      const requestMessages = buildInterviewerRequestMessages(
+        priorMessages,
+        session.interview_brief,
+        msg.content,
+      );
+      const userTurn = priorMessages.filter((m) => m.role === "user").length;
+
+      lines.push(`[TURN ${userTurn} REQUEST]`);
+      lines.push(`${"-".repeat(40)}`);
+      lines.push(JSON.stringify(requestMessages, null, 2));
+      lines.push(`${"-".repeat(40)}`);
+      lines.push(``);
+    }
   }
 
   const dir = join(process.cwd(), "logs");
