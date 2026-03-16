@@ -1,30 +1,30 @@
-export interface ScrapedContext {
+export interface EnrichmentContext {
+  // From job posting scraper
   job_title?: string;
   company?: string;
   company_description?: string;
   team_description?: string;
+  seniority_level?: string;
   requirements?: string[];
   responsibilities?: string[];
   tech_stack?: string[];
-  seniority_level?: string;
-  raw_markdown?: string;
-  source_url?: string;
-}
 
-export interface SearchContext {
-  interview_questions?: Array<{ content: string; source: string; url: string }>;
-  company_info?: Array<{ content: string; url: string }>;
+  // From search + deep scrape
+  interview_intel?: {
+    questions: string[];
+    process_details?: string;
+    culture_notes?: string;
+  };
 }
 
 export interface Session {
   id: string;
   job_title: string;
   company: string | null;
-  job_description: string | null;
   job_url: string | null;
-  scraped_context: ScrapedContext | null;
-  search_context: SearchContext | null;
+  enrichment_context: EnrichmentContext | null;
   user_context: string | null;
+  interview_brief: string | null;
   status: "active" | "ended" | "report_ready";
   created_at: string;
   ended_at: string | null;
@@ -49,7 +49,6 @@ export interface Report {
 export interface CreateSessionBody {
   job_title?: string;
   company?: string;
-  job_description?: string;
   job_url?: string;
   user_context?: string;
 }

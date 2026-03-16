@@ -29,3 +29,10 @@ ALTER TABLE sessions ADD COLUMN IF NOT EXISTS job_url TEXT;
 ALTER TABLE sessions ADD COLUMN IF NOT EXISTS scraped_context JSONB;
 ALTER TABLE sessions ADD COLUMN IF NOT EXISTS search_context JSONB;
 ALTER TABLE sessions ADD COLUMN IF NOT EXISTS user_context TEXT;
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS interview_brief TEXT;
+
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS enrichment_context JSONB;
+
+CREATE INDEX IF NOT EXISTS idx_sessions_status ON sessions(status);
+
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS word_count INTEGER;

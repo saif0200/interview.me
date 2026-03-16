@@ -10,7 +10,7 @@ import reportsRouter from "./routes/reports.js";
 const app = express();
 
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: "1mb" }));
 
 // Routes
 app.use("/api/sessions", sessionsRouter);

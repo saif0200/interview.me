@@ -6,14 +6,43 @@ export const openai = new OpenAI({
   apiKey: env.DO_MODEL_ACCESS_KEY,
 });
 
-const MODEL = "glm-5";
+export const PROMPT_MODEL = env.MODEL_PROMPT;
+export const INTERVIEW_MODEL = env.MODEL_INTERVIEW;
+export const REPORT_MODEL = env.MODEL_REPORT;
+export const BRIEF_MODEL = env.MODEL_BRIEF;
+
+export async function promptCompletion(
+  messages: OpenAI.Chat.ChatCompletionMessageParam[],
+  maxTokens = 1200,
+) {
+  return openai.chat.completions.create({
+    model: PROMPT_MODEL,
+    messages,
+    max_tokens: maxTokens,
+    stream: false,
+  });
+}
+
+export async function briefCompletion(
+  messages: OpenAI.Chat.ChatCompletionMessageParam[],
+  maxTokens = 800,
+) {
+  return openai.chat.completions.create({
+    model: BRIEF_MODEL,
+    messages,
+    max_tokens: maxTokens,
+    stream: false,
+  });
+}
 
 export async function chatCompletion(
   messages: OpenAI.Chat.ChatCompletionMessageParam[],
+  maxTokens = 384,
 ) {
   return openai.chat.completions.create({
-    model: MODEL,
+    model: INTERVIEW_MODEL,
     messages,
+    max_tokens: maxTokens,
     stream: true,
   });
 }
@@ -22,7 +51,7 @@ export async function generateReportStream(
   messages: OpenAI.Chat.ChatCompletionMessageParam[],
 ) {
   return openai.chat.completions.create({
-    model: MODEL,
+    model: REPORT_MODEL,
     messages,
     max_tokens: 2048,
     stream: true,
