@@ -4,95 +4,33 @@ AI-powered voice interview practice platform. Paste a job posting URL, get a rea
 
 Built for the [DigitalOcean Gradient AI Hackathon](https://dograduation.devpost.com/).
 
-## Architecture
+## How It Works
 
 ```mermaid
-flowchart TB
-    subgraph Frontend["Frontend (React + Vite)"]
-        LP[Landing Page] --> IV[Voice Interview]
-        IV --> RP[Report Page]
-        IV -. "Web Speech API" .-> STT[Speech-to-Text]
-        IV -. "Web Speech API" .-> TTS[Text-to-Speech]
-    end
+flowchart LR
+    A["Paste job URL"] --> B["Enrich context"]
+    B --> C["Voice interview"]
+    C --> D["Performance report"]
 
-    subgraph Backend["Backend (Express)"]
-        subgraph SessionCreation["POST /api/sessions"]
-            direction TB
-            S1[Receive job URL] --> S2[Jina Reader: scrape job page]
-            S2 --> S3["LLM: extract structured data
-            (title, requirements, tech stack)"]
-            S1 --> S4["Serper: search interview questions
-            + company culture"]
-            S3 --> S5["LLM: generate interviewer
-            system prompt"]
-            S4 --> S5
-            S5 --> S6[Generate opening message]
-            S4 -.-> DE["Background: deep enrichment
-            (scrape search results → extract
-            interview questions + process details)"]
-        end
+    B -.- B1["Scrape posting via Jina Reader
+    Extract requirements, tech stack
+    Search for real interview questions"]
 
-        subgraph ChatLoop["POST /api/chat (SSE stream)"]
-            direction TB
-            C1[Receive candidate message] --> C2[Build LLM request]
-            C2 --> C3{"Runtime injection"}
-            C3 --> C3a["Turn guidance
-            (behavioral → technical → closing)"]
-            C3 --> C3b["Candidate behavior detection
-            (hijack / early farewell)"]
-            C3 --> C3c["Brevity constraint
-            (≤40 words, always last)"]
-            C3a --> C4["LLM: generate response
-            (per-turn max_tokens)"]
-            C3b --> C4
-            C3c --> C4
-            C4 --> C5[Stream tokens via SSE]
-            C5 --> C6{"[[END_INTERVIEW]]?"}
-        end
+    C -.- C1["AI interviewer asks 4-5 questions
+    Browser speech APIs (STT/TTS)
+    Responses streamed via SSE"]
 
-        subgraph Report["GET /api/sessions/:id/report/stream"]
-            R1[Collect transcript] --> R2["LLM: generate scored
-            performance report"]
-            R2 --> R3[Stream report via SSE]
-        end
-    end
-
-    subgraph External["External Services"]
-        DO["DigitalOcean Gradient AI
-        (minimax-m2.5)"]
-        JINA[Jina Reader API]
-        SERPER[Serper API]
-        PG[(PostgreSQL)]
-    end
-
-    LP -- "job URL" --> SessionCreation
-    IV -- "user speech → text" --> ChatLoop
-    ChatLoop -- "tokens → speech" --> IV
-    C6 -- "yes" --> RP
-    RP --> Report
-
-    S2 -.-> JINA
-    S4 -.-> SERPER
-    DE -.-> JINA
-    S3 -.-> DO
-    S5 -.-> DO
-    S6 -.-> DO
-    C4 -.-> DO
-    R2 -.-> DO
-    SessionCreation -.-> PG
-    ChatLoop -.-> PG
-    Report -.-> PG
+    D -.- D1["LLM evaluates full transcript
+    Scored feedback across 5 categories
+    Question-by-question breakdown"]
 ```
 
-### Key flows
+### Under the hood
 
-**Session creation** — When a user submits a job URL, two things happen in parallel: Jina scrapes the posting and an LLM extracts structured data (requirements, tech stack, seniority), while Serper searches for real interview questions and company culture. This feeds into a meta-prompt that generates a role-specific interviewer persona. After the session is created, deep enrichment continues in the background — scraping search result pages (and Glassdoor/Blind snippets) for interview questions that get stored for the interviewer to reference.
-
-**Voice loop** — The frontend runs a state machine: `AI_SPEAKING → LISTENING → PROCESSING → AI_SPEAKING`. Browser Web Speech APIs handle STT/TTS with no external speech services. The backend streams each interviewer response as SSE tokens.
-
-**Interview runtime** — Every chat turn gets three injected system messages after the conversation history: turn guidance (controls question progression), candidate behavior detection (prevents the candidate from hijacking the interview or ending early), and a hard brevity constraint (keeps responses under 40 words). The model sees these in the recency position so they can't be diluted by the generated system prompt.
-
-**Report generation** — Streamed on-demand when the user navigates to the report page. The LLM evaluates the full transcript and outputs a markdown report with scores parsed from a `SCORES_JSON:{...}` line.
+- **Context enrichment** — Jina Reader scrapes the job posting while Serper searches for past interview questions and company culture. An LLM extracts structured data (requirements, tech stack, seniority) and generates a role-specific interviewer persona. Deep enrichment continues in the background, pulling interview questions from Glassdoor/Blind snippets.
+- **Interview runtime** — Each chat turn gets injected system messages: turn guidance (behavioral → technical → closing), candidate behavior detection (blocks hijacking or early farewells), and a hard brevity constraint (≤40 words) in the recency position. Per-turn token limits prevent mid-sentence truncation.
+- **Voice loop** — Frontend state machine (`AI_SPEAKING → LISTENING → PROCESSING → AI_SPEAKING`) using browser Web Speech APIs. No external speech services.
+- **Report** — Streamed on-demand via SSE. The LLM evaluates the transcript and outputs scored feedback with a question-by-question breakdown.
 
 ## Project Structure
 
