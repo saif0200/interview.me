@@ -15,7 +15,7 @@ export default function ReportPage() {
   const navigate = useNavigate();
   const [report, setReport] = useState<ReportData | null>(null);
   const [loading, setLoading] = useState(true);
-  const [streaming, setStreaming] = useState(false);
+  
   const contentRef = useRef("");
 
   useEffect(() => {
@@ -26,7 +26,7 @@ export default function ReportPage() {
 
     async function fetchReport() {
       try {
-        setStreaming(true);
+        
         setLoading(false);
 
         const { scores } = await streamReport(sessionId!, (token) => {
@@ -39,13 +39,13 @@ export default function ReportPage() {
           // Strip SCORES_JSON line from displayed content
           const cleanContent = contentRef.current.replace(/SCORES_JSON:\s*\{[^}]+\}/, "").trim();
           setReport({ content: cleanContent, scores });
-          setStreaming(false);
+          
         }
       } catch (err) {
         console.error("Failed to stream report:", err);
         if (!cancelled) {
           setLoading(true);
-          setStreaming(false);
+          
         }
       }
     }
