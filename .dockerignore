@@ -7,3 +7,8 @@ dist
 logs
 .git
 .DS_Store
+*.md
+eslint.config.*
+.vscode
+.idea
+.do

@@ -1,8 +1,6 @@
 import { config } from "dotenv";
 import { resolve } from "path";
 
-// Support both the Docker quick-start root `.env` and the manual setup `backend/.env`.
-config({ path: resolve(import.meta.dirname, "../../.env") });
 config({ path: resolve(import.meta.dirname, "../../../.env") });
 
 function required(key: string): string {
