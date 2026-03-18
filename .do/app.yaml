@@ -63,4 +63,4 @@ databases:
   - name: db
     engine: PG
     production: false
-    version: "16"
+    version: "18"
