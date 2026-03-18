@@ -17,7 +17,7 @@ ingress:
 services:
   - name: backend
     github:
-      repo: your-github-repo
+      repo: ikarivirtual/interview.me
       branch: main
       deploy_on_push: true
     source_dir: /
@@ -34,22 +34,30 @@ services:
       - key: DO_MODEL_ACCESS_KEY
         scope: RUN_TIME
         type: SECRET
+      - key: ELEVENLABS_API_KEY
+        scope: RUN_TIME
+        type: SECRET
+      - key: ELEVENLABS_VOICE_ID
+        scope: RUN_TIME
+        type: SECRET
+      - key: SERPER_API_KEY
+        scope: RUN_TIME
+        type: SECRET
+      - key: JINA_API_KEY
+        scope: RUN_TIME
+        type: SECRET
       - key: NODE_ENV
         value: production
 
 static_sites:
   - name: frontend
     github:
-      repo: your-github-repo
+      repo: ikarivirtual/interview.me
       branch: main
       deploy_on_push: true
     source_dir: /
     build_command: npm install && npm run build:frontend
     output_dir: frontend/dist
-    envs:
-      - key: VITE_API_URL
-        scope: BUILD_TIME
-        value: ${APP_URL}
 
 databases:
   - name: db
