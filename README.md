@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/logo.png" alt="interview.me logo" width="400">
+  <img src="assets/logo.png" alt="interview.me logo" width="600">
 </p>
 
 # interview.me
