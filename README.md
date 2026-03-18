@@ -17,7 +17,7 @@ flowchart LR
     Search for real interview questions"]
 
     C -.- C1["AI interviewer asks 4-5 questions
-    Browser speech APIs (STT/TTS)
+    ElevenLabs streaming TTS + browser STT
     Responses streamed via SSE"]
 
     D -.- D1["LLM evaluates full transcript
@@ -29,7 +29,7 @@ flowchart LR
 
 - **Context enrichment** — Jina Reader scrapes the job posting while Serper searches for past interview questions and company culture. An LLM extracts structured data (requirements, tech stack, seniority) and generates a role-specific interviewer persona. Deep enrichment continues in the background, pulling interview questions from Glassdoor/Blind snippets.
 - **Interview runtime** — Each chat turn gets injected system messages: turn guidance (behavioral → technical → closing), candidate behavior detection (blocks hijacking or early farewells), and a hard brevity constraint (≤40 words) in the recency position. Per-turn token limits prevent mid-sentence truncation.
-- **Voice loop** — Frontend state machine (`AI_SPEAKING → LISTENING → PROCESSING → AI_SPEAKING`) using browser Web Speech APIs. No external speech services.
+- **Voice loop** — Frontend state machine (`AI_SPEAKING → LISTENING → PROCESSING → AI_SPEAKING`). TTS uses ElevenLabs with streaming playback via MediaSource API — audio starts playing as chunks arrive rather than waiting for the full MP3. Falls back to browser Web Speech API when ElevenLabs is unavailable. STT uses browser Web Speech API.
 - **Report** — Streamed on-demand via SSE. The LLM evaluates the transcript and outputs scored feedback with a question-by-question breakdown.
 
 ## Project Structure
@@ -54,6 +54,7 @@ The fastest way to run the full stack — no Node.js or PostgreSQL setup needed.
 DO_MODEL_ACCESS_KEY=your-key-from-digitalocean
 SERPER_API_KEY=your-serper-key
 JINA_API_KEY=
+ELEVENLABS_API_KEY=your-elevenlabs-key
 ```
 3. Run:
 ```bash
@@ -109,6 +110,9 @@ PORT=3001
 # Optional: Context enrichment APIs
 SERPER_API_KEY=your-serper-key
 JINA_API_KEY=your-jina-key
+
+# Optional: ElevenLabs TTS (falls back to browser speech synthesis if not set)
+ELEVENLABS_API_KEY=your-elevenlabs-key
 ```
 
 > To get a Model Access Key, go to [DigitalOcean GenAI Inference](https://cloud.digitalocean.com/gen-ai/inference) and create a key.
@@ -133,7 +137,7 @@ Frontend runs on `http://localhost:5173`, backend on `http://localhost:3001`. Th
 
 ## Tech Stack
 
-**Frontend:** React 19, Vite 8, TypeScript, Tailwind CSS v4, shadcn/ui, Motion, Web Speech API (STT/TTS)
+**Frontend:** React 19, Vite 8, TypeScript, Tailwind CSS v4, shadcn/ui, Motion, Web Speech API (STT), ElevenLabs streaming TTS
 
 **Backend:** Express 5, PostgreSQL, OpenAI SDK (DO Gradient compatible), Server-Sent Events
 
@@ -153,3 +157,4 @@ Frontend runs on `http://localhost:5173`, backend on `http://localhost:3001`. Th
 | POST   | `/api/sessions/:id/end`               | End session                              |
 | GET    | `/api/sessions/:id/report/stream`     | Stream performance report (SSE)          |
 | GET    | `/api/sessions/:id/report`            | Get report (200 ready, 202 generating)   |
+| POST   | `/api/tts`                            | Text-to-speech via ElevenLabs (streamed) |
