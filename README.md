@@ -113,6 +113,7 @@ JINA_API_KEY=your-jina-key
 
 # Optional: ElevenLabs TTS (falls back to browser speech synthesis if not set)
 ELEVENLABS_API_KEY=your-elevenlabs-key
+ELEVENLABS_VOICE_ID=your-voice-id
 ```
 
 > To get a Model Access Key, go to [DigitalOcean GenAI Inference](https://cloud.digitalocean.com/gen-ai/inference) and create a key.
