@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/logo.png" alt="interview.me logo" width="400">
+</p>
+
 # interview.me
 
 AI-powered voice interview practice platform. Paste a job posting URL, get a realistic mock interview tailored to the role, and receive a detailed performance report with scored feedback.
